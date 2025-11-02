@@ -36,7 +36,7 @@ services:
     image: ${DOCKER_USERNAME}/backend_red_social_gera:latest
     environment:
       NODE_ENV: production
-      PORT: 3000
+      PORT: ${APP_PORT:-3000}
       MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/social_network_prod?authSource=admin
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
@@ -45,8 +45,9 @@ services:
       UPLOAD_PATH: /app/uploads
       RATE_LIMIT_TTL: ${RATE_LIMIT_TTL}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX}
-    ports:
-      - "3000:3000"
+    # 👇 SIN ports: Traefik accede vía red interna
+    expose:
+      - "${APP_PORT:-3000}"  # Solo expone a la red Docker, no al host
     volumes:
       - app_uploads:/app/uploads
     depends_on:
@@ -54,12 +55,18 @@ services:
         condition: service_healthy
     networks:
       - app-network
+      - dokploy-network  # 👈 Red de Traefik
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${APP_PORT:-3000}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    labels:
+      # Labels para Traefik (Dokploy los configura automáticamente, pero puedes personalizarlos)
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`${TRAEFIK_HOST:-redsocialgera-backend.traefik.me}`)"
+      - "traefik.http.services.app.loadbalancer.server.port=${APP_PORT:-3000}"
     deploy:
       resources:
         limits:
@@ -89,3 +96,5 @@ volumes:
 networks:
   app-network:
     driver: bridge
+  dokploy-network:  # 👈 Red externa de Traefik
+    external: true

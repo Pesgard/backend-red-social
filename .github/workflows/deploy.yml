@@ -49,26 +49,54 @@ jobs:
           cache-from: type=registry,ref=${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
 
-      # 4️⃣ Create Project (if not exists)
-      - name: Create Project in Dokploy
-        id: create_project
+      - name: 🔍 Check or Create Project in Dokploy
+        id: setup_project
         run: |
           echo "🔍 Checking if project exists..."
           PROJECT_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/project.all")
-          echo "Project response:"
-          PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r "map(select(.name==\"${{ env.PROJECT_NAME }}\"))[0].id")
-          
+      
+          # Muestra la respuesta para debug
+          echo "Project response: $PROJECT_RESPONSE"
+      
+          # Buscar el proyecto por nombre
+          PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r "map(select(.name==\"${{ env.PROJECT_NAME }}\"))[0].projectId")
+      
           if [ "$PROJECT_ID" == "null" ] || [ -z "$PROJECT_ID" ]; then
             echo "🧩 Creating project ${{ env.PROJECT_NAME }}..."
             CREATE_RESPONSE=$(curl -s -X POST "$DOKPLOY_URL/project.create" \
               -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
               -H "Content-Type: application/json" \
               -d "{\"name\": \"${{ env.PROJECT_NAME }}\", \"description\": \"Proyecto CI/CD automático\", \"env\": \"production\"}")
-            PROJECT_ID=$(echo "$CREATE_RESPONSE" | jq -r ".id")
+            
+            echo "Create response: $CREATE_RESPONSE"
+            
+            # Extraer el projectId y environmentId del JSON real
+            PROJECT_ID=$(echo "$CREATE_RESPONSE" | jq -r ".project.projectId")
+            ENV_ID=$(echo "$CREATE_RESPONSE" | jq -r ".environment.environmentId")
+          else
+            echo "✅ Project already exists, getting environment..."
+            ENV_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/environment.byProjectId?projectId=$PROJECT_ID")
+            echo "Env response: $ENV_RESPONSE"
+            ENV_ID=$(echo "$ENV_RESPONSE" | jq -r "map(select(.name==\"${{ env.ENVIRONMENT_NAME }}\"))[0].environmentId")
+      
+            if [ "$ENV_ID" == "null" ] || [ -z "$ENV_ID" ]; then
+              echo "🧩 Creating environment ${{ env.ENVIRONMENT_NAME }}..."
+              CREATE_ENV=$(curl -s -X POST "$DOKPLOY_URL/environment.create" \
+                -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+                -H "Content-Type: application/json" \
+                -d "{\"name\": \"${{ env.ENVIRONMENT_NAME }}\", \"description\": \"Entorno de producción\", \"projectId\": \"$PROJECT_ID\"}")
+              ENV_ID=$(echo "$CREATE_ENV" | jq -r ".environmentId")
+            fi
           fi
-
+      
           echo "✅ Project ID: $PROJECT_ID"
+          echo "✅ Environment ID: $ENV_ID"
+      
           echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
+          echo "env_id=$ENV_ID" >> $GITHUB_OUTPUT
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+            
 
       # 5️⃣ Create Environment (if not exists)
       - name: Create Environment in Dokploy

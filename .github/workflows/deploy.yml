@@ -135,36 +135,27 @@ jobs:
         run: |
           ENV_ID=${{ steps.setup_project.outputs.env_id }}
           echo "🔍 Checking if backend exists in environment $ENV_ID ..."
+          
+          echo "🧩 Creating backend application..."
+          CREATE_APP=$(curl -s -X POST "$DOKPLOY_URL/application.create" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"name\": \"${{ env.APP_NAME }}\",
+              \"appName\": \"${{ env.APP_NAME }}\",
+              \"environmentId\": \"$ENV_ID\",
+              \"description\": \"Backend NestJS API\",
+            }")
 
-          ENV_DETAIL=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/environment.one?id=$ENV_ID")
-          echo "Environment response: $ENV_DETAIL"
+          echo "Application.create response: $CREATE_APP"
 
-          # Buscar la aplicación por nombre
-          APP_ID=$(echo "$ENV_DETAIL" | jq -r ".applications | map(select(.name==\"${{ env.APP_NAME }}\"))[0].applicationId // empty")
-
-          if [ -z "$APP_ID" ]; then
-            echo "🧩 Creating backend application..."
-            CREATE_APP=$(curl -s -X POST "$DOKPLOY_URL/application.create" \
-              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-              -H "Content-Type: application/json" \
-              -d "{
-                \"name\": \"${{ env.APP_NAME }}\",
-                \"appName\": \"${{ env.APP_NAME }}\",
-                \"environmentId\": \"$ENV_ID\",
-                \"description\": \"Backend NestJS API\",
-              }")
-
-            echo "Application.create response: $CREATE_APP"
-
-            # A veces Dokploy responde con 'true' y no con objeto
-            if [ "$CREATE_APP" = "true" ]; then
-              echo "✅ Application created successfully (response true)."
-            else
-              APP_ID=$(echo "$CREATE_APP" | jq -r ".applicationId // empty")
-            fi
+          # A veces Dokploy responde con 'true' y no con objeto
+          if [ "$CREATE_APP" = "true" ]; then
+            echo "✅ Application created successfully (response true)."
           else
-            echo "✅ Backend already exists with ID: $APP_ID"
+            APP_ID=$(echo "$CREATE_APP" | jq -r ".applicationId // empty")
           fi
+
 
           echo "✅ Backend ID: ${APP_ID:-unknown}"
           echo "app_id=${APP_ID:-unknown}" >> $GITHUB_OUTPUT

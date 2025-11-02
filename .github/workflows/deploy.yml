@@ -152,7 +152,6 @@ jobs:
                 \"appName\": \"${{ env.APP_NAME }}\",
                 \"environmentId\": \"$ENV_ID\",
                 \"description\": \"Backend NestJS API\",
-                \"serverId\": null
               }")
 
             echo "Application.create response: $CREATE_APP"

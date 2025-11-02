@@ -56,8 +56,10 @@ jobs:
           echo "🔍 Checking if project exists..."
           PROJECT_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/project.all")
           
-          # Buscar el proyecto por nombre
-          PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r ".data | map(select(.name==\"${{ env.PROJECT_NAME }}\"))[0].projectId // empty")
+          echo "API Response: $PROJECT_RESPONSE"
+          
+          # Buscar el proyecto por nombre (la API devuelve un array directo)
+          PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r "map(select(.name==\"${{ env.PROJECT_NAME }}\"))[0].projectId // empty")
           
           if [ -z "$PROJECT_ID" ]; then
             echo "🧩 Creating project ${{ env.PROJECT_NAME }}..."
@@ -66,9 +68,12 @@ jobs:
               -H "Content-Type: application/json" \
               -d "{\"name\": \"${{ env.PROJECT_NAME }}\", \"description\": \"Red Social Gera - Producción\"}")
             
+            echo "Create Response: $CREATE_RESPONSE"
+            
             PROJECT_ID=$(echo "$CREATE_RESPONSE" | jq -r ".project.projectId")
             ENV_ID=$(echo "$CREATE_RESPONSE" | jq -r ".environment.environmentId")
             echo "✅ Project created: $PROJECT_ID"
+            echo "✅ Environment created: $ENV_ID"
           else
             echo "✅ Project already exists: $PROJECT_ID"
             
@@ -83,6 +88,9 @@ jobs:
                 -H "Content-Type: application/json" \
                 -d "{\"name\": \"${{ env.ENVIRONMENT_NAME }}\", \"description\": \"Entorno de producción\", \"projectId\": \"$PROJECT_ID\"}")
               ENV_ID=$(echo "$CREATE_ENV" | jq -r ".environmentId")
+              echo "✅ Environment created: $ENV_ID"
+            else
+              echo "✅ Environment already exists: $ENV_ID"
             fi
           fi
           

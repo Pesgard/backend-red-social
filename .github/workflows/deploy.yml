@@ -53,6 +53,7 @@ jobs:
         run: |
           response=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
             "${{ secrets.DOKPLOY_URL }}/api/trpc/project.all")
+          echo "response=$response"
           echo "$response" | grep -q "\"name\":\"${{ env.PROJECT_NAME }}\"" && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
 
       # 🏗️ 5️⃣ Create Project if not exists
@@ -65,11 +66,7 @@ jobs:
             -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
             -H "Content-Type: application/json" \
             "${{ secrets.DOKPLOY_URL }}/api/trpc/project.create" \
-            -d '{
-              "json": {
-                "name": "'"${{ env.PROJECT_NAME }}"'"
-              }
-            }')
+            -d '{"input":{"name":"'"${{ env.PROJECT_NAME }}"'"}}')
           echo "response=$response"
           PROJECT_ID=$(echo "$response" | grep -o '"id":"[^"]*' | cut -d'"' -f4)
           echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
@@ -98,6 +95,7 @@ jobs:
         run: |
           response=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
             "${{ secrets.DOKPLOY_URL }}/api/trpc/application.all")
+          echo "response=$response"
           echo "$response" | grep -q "\"name\":\"${{ env.MONGO_APP_NAME }}\"" && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
 
       # 🍃 8️⃣ Create MongoDB service if not exists
@@ -105,24 +103,23 @@ jobs:
         if: steps.check_mongo.outputs.exists == 'false'
         run: |
           echo "🧩 Creating MongoDB service..."
-          curl -s -X POST \
+          response=$(curl -s -X POST \
             -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
             -H "Content-Type: application/json" \
             "${{ secrets.DOKPLOY_URL }}/api/trpc/application.create" \
-            -d '{
-              "json": {
-                "projectId": "'"${{ steps.determine_project_id.outputs.project_id }}"'",
-                "name": "'"${{ env.MONGO_APP_NAME }}"'",
-                "sourceType": "docker",
-                "dockerImage": "mongo:7.0-jammy",
-                "dockerExposePort": "27017",
-                "dockerEnv": {
-                  "MONGO_INITDB_ROOT_USERNAME": "admin",
-                  "MONGO_INITDB_ROOT_PASSWORD": "change_me_in_dokploy",
-                  "MONGO_INITDB_DATABASE": "social_network_prod"
-                }
+            -d '{"input":{
+              "projectId":"'"${{ steps.determine_project_id.outputs.project_id }}"'",
+              "name":"'"${{ env.MONGO_APP_NAME }}"'",
+              "sourceType":"docker",
+              "dockerImage":"mongo:7.0-jammy",
+              "dockerExposePort":"27017",
+              "dockerEnv":{
+                "MONGO_INITDB_ROOT_USERNAME":"admin",
+                "MONGO_INITDB_ROOT_PASSWORD":"change_me_in_dokploy",
+                "MONGO_INITDB_DATABASE":"social_network_prod"
               }
-            }'
+            }}')
+          echo "response=$response"
 
       # 🧩 9️⃣ Check if backend exists
       - name: Check if Backend exists
@@ -130,6 +127,7 @@ jobs:
         run: |
           response=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
             "${{ secrets.DOKPLOY_URL }}/api/trpc/application.all")
+          echo "response=$response"
           echo "$response" | grep -q "\"name\":\"${{ env.APP_NAME }}\"" && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
 
       # 🧩 🔟 Create Backend service if not exists
@@ -137,30 +135,28 @@ jobs:
         if: steps.check_backend.outputs.exists == 'false'
         run: |
           echo "🧩 Creating backend service..."
-          curl -s -X POST \
+          response=$(curl -s -X POST \
             -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
             -H "Content-Type: application/json" \
             "${{ secrets.DOKPLOY_URL }}/api/trpc/application.create" \
-            -d '{
-              "json": {
-                "projectId": "'"${{ steps.determine_project_id.outputs.project_id }}"'",
-                "name": "'"${{ env.APP_NAME }}"'",
-                "sourceType": "docker",
-                "dockerImage": "'"${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"'",
-                "dockerExposePort": "3000"
-              }
-            }'
+            -d '{"input":{
+              "projectId":"'"${{ steps.determine_project_id.outputs.project_id }}"'",
+              "name":"'"${{ env.APP_NAME }}"'",
+              "sourceType":"docker",
+              "dockerImage":"'"${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"'",
+              "dockerExposePort":"3000"
+            }}')
+          echo "response=$response"
 
       # 🚀 1️⃣1️⃣ Trigger deployment for backend
       - name: Trigger Dokploy Deployment
         run: |
           echo "🚀 Deploying backend..."
-          curl -s -X POST \
+          response=$(curl -s -X POST \
             -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
             -H "Content-Type: application/json" \
             "${{ secrets.DOKPLOY_URL }}/api/trpc/application.deploy" \
-            -d '{
-              "json": {
-                "applicationName": "'"${{ env.APP_NAME }}"'"
-              }
-            }'
+            -d '{"input":{
+              "applicationName":"'"${{ env.APP_NAME }}"'"
+            }}')
+          echo "response=$response"

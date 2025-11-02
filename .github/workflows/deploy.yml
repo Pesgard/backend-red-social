@@ -1,36 +1,166 @@
-name: Build & Push to Docker Hub
+name: 🚀 Deploy to Production (Dokploy)
 
 on:
   push:
-    branches: ["master"]
+    branches:
+      - main
+
+env:
+  IMAGE_NAME: backend_red_social_gera
+  PROJECT_NAME: redsocialgera
+  APP_NAME: redsocialgera-backend
+  MONGO_APP_NAME: redsocialgera-mongodb
 
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      # 🧩 1️⃣ Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 🐳 2️⃣ Docker Setup
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKHUB_USERNAME }}
           password: ${{ secrets.DOCKHUB_PASSWORD }}
 
+      # 🏗️ 3️⃣ Build and push image
       - name: Build and Push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ secrets.DOCKHUB_USERNAME }}/backend_red_social_gera:latest
-          platforms: linux/amd64,linux/arm64  # 👈 Soporte para ambas arquitecturas
-          cache-from: type=registry,ref=${{ secrets.DOCKHUB_USERNAME }}/backend_red_social_gera:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKHUB_USERNAME }}/backend_red_social_gera:buildcache,mode=max
+          tags: |
+            ${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+            ${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=registry,ref=${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+      # 🔍 4️⃣ Check if Project exists
+      - name: Check if Project exists in Dokploy
+        id: check_project
+        run: |
+          response=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            "${{ secrets.DOKPLOY_URL }}/api/trpc/project.all")
+          echo "$response" | grep -q "\"name\":\"${{ env.PROJECT_NAME }}\"" && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
+
+      # 🏗️ 5️⃣ Create Project if not exists
+      - name: Create Project in Dokploy
+        if: steps.check_project.outputs.exists == 'false'
+        id: create_project
+        run: |
+          echo "🧩 Creating project ${{ env.PROJECT_NAME }} in Dokploy..."
+          response=$(curl -s -X POST \
+            -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.DOKPLOY_URL }}/api/trpc/project.create" \
+            -d '{
+              "json": {
+                "name": "'"${{ env.PROJECT_NAME }}"'"
+              }
+            }')
+          echo "response=$response"
+          PROJECT_ID=$(echo "$response" | grep -o '"id":"[^"]*' | cut -d'"' -f4)
+          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
+
+      - name: Get Project ID
+        if: steps.check_project.outputs.exists == 'true'
+        id: get_project
+        run: |
+          PROJECT_ID=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            "${{ secrets.DOKPLOY_URL }}/api/trpc/project.all" | jq -r '.result.data | map(select(.name=="'${{ env.PROJECT_NAME }}'"))[0].id')
+          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
+
+      # 🧠 6️⃣ Combine project ID from both paths
+      - name: Determine Project ID
+        id: determine_project_id
+        run: |
+          if [ -n "${{ steps.create_project.outputs.project_id }}" ]; then
+            echo "project_id=${{ steps.create_project.outputs.project_id }}" >> $GITHUB_OUTPUT
+          else
+            echo "project_id=${{ steps.get_project.outputs.project_id }}" >> $GITHUB_OUTPUT
+          fi
+
+      # 🍃 7️⃣ Check if Mongo service exists
+      - name: Check if Mongo exists in Dokploy
+        id: check_mongo
+        run: |
+          response=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.all")
+          echo "$response" | grep -q "\"name\":\"${{ env.MONGO_APP_NAME }}\"" && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
+
+      # 🍃 8️⃣ Create MongoDB service if not exists
+      - name: Create MongoDB in Dokploy
+        if: steps.check_mongo.outputs.exists == 'false'
+        run: |
+          echo "🧩 Creating MongoDB service..."
+          curl -s -X POST \
+            -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.create" \
+            -d '{
+              "json": {
+                "projectId": "'"${{ steps.determine_project_id.outputs.project_id }}"'",
+                "name": "'"${{ env.MONGO_APP_NAME }}"'",
+                "sourceType": "docker",
+                "dockerImage": "mongo:7.0-jammy",
+                "dockerExposePort": "27017",
+                "dockerEnv": {
+                  "MONGO_INITDB_ROOT_USERNAME": "admin",
+                  "MONGO_INITDB_ROOT_PASSWORD": "change_me_in_dokploy",
+                  "MONGO_INITDB_DATABASE": "social_network_prod"
+                }
+              }
+            }'
+
+      # 🧩 9️⃣ Check if backend exists
+      - name: Check if Backend exists
+        id: check_backend
+        run: |
+          response=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.all")
+          echo "$response" | grep -q "\"name\":\"${{ env.APP_NAME }}\"" && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
+
+      # 🧩 🔟 Create Backend service if not exists
+      - name: Create Backend in Dokploy
+        if: steps.check_backend.outputs.exists == 'false'
+        run: |
+          echo "🧩 Creating backend service..."
+          curl -s -X POST \
+            -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.create" \
+            -d '{
+              "json": {
+                "projectId": "'"${{ steps.determine_project_id.outputs.project_id }}"'",
+                "name": "'"${{ env.APP_NAME }}"'",
+                "sourceType": "docker",
+                "dockerImage": "'"${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"'",
+                "dockerExposePort": "3000"
+              }
+            }'
+
+      # 🚀 1️⃣1️⃣ Trigger deployment for backend
+      - name: Trigger Dokploy Deployment
+        run: |
+          echo "🚀 Deploying backend..."
+          curl -s -X POST \
+            -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.deploy" \
+            -d '{
+              "json": {
+                "applicationName": "'"${{ env.APP_NAME }}"'"
+              }
+            }'

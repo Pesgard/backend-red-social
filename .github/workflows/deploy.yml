@@ -94,9 +94,7 @@ jobs:
       
           echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
           echo "env_id=$ENV_ID" >> $GITHUB_OUTPUT
-        env:
-          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
-
+        
       # 6️⃣ Create Mongo service (if not exists)
       - name: 🍃 Create MongoDB in Dokploy
         id: create_mongo
@@ -145,9 +143,6 @@ jobs:
 
           echo "✅ MongoDB ID: ${MONGO_ID:-unknown}"
           echo "mongo_id=${MONGO_ID:-unknown}" >> $GITHUB_OUTPUT
-        env:
-          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
-
 
       # 7️⃣ Create Backend application (if not exists)
       - name: 🚀 Create Backend in Dokploy

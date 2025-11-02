@@ -103,13 +103,19 @@ jobs:
         run: |
           ENV_ID=${{ steps.setup_project.outputs.env_id }}
           echo "🔍 Checking if MongoDB exists in environment $ENV_ID ..."
-
-          # Dokploy no tiene endpoint /mongo.one?appName=..., solo /mongo.one?id=...
-          # así que tenemos que traer todos y filtrar
+          
+          # Consultar todos los MongoDB existentes
           MONGO_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/mongo.all")
-          MONGO_ID=$(echo "$MONGO_RESPONSE" | jq -r "map(select(.name==\"${{ env.MONGO_APP_NAME }}\"))[0].mongoId")
+          echo "Mongo.all response: $MONGO_RESPONSE"
 
-          if [ "$MONGO_ID" == "null" ] || [ -z "$MONGO_ID" ]; then
+          # Filtrar por nombre (si la respuesta es un array)
+          if echo "$MONGO_RESPONSE" | jq -e . >/dev/null 2>&1; then
+            MONGO_ID=$(echo "$MONGO_RESPONSE" | jq -r "map(select(.name==\"${{ env.MONGO_APP_NAME }}\"))[0].mongoId // empty")
+          else
+            MONGO_ID=""
+          fi
+
+          if [ -z "$MONGO_ID" ]; then
             echo "🧩 Creating MongoDB service..."
             CREATE_MONGO=$(curl -s -X POST "$DOKPLOY_URL/mongo.create" \
               -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
@@ -124,13 +130,21 @@ jobs:
                 \"databasePassword\": \"change_me_in_dokploy\",
                 \"replicaSets\": false
               }")
-            MONGO_ID=$(echo "$CREATE_MONGO" | jq -r ".mongoId")
+
+            echo "Mongo.create response: $CREATE_MONGO"
+
+            # Si devuelve solo "true", no hay ID disponible, pero al menos confirmamos que se creó
+            if [ "$CREATE_MONGO" = "true" ]; then
+              echo "✅ MongoDB service created successfully (no ID returned)."
+            else
+              MONGO_ID=$(echo "$CREATE_MONGO" | jq -r ".mongoId // empty")
+            fi
           else
             echo "✅ MongoDB already exists."
           fi
 
-          echo "✅ MongoDB ID: $MONGO_ID"
-          echo "mongo_id=$MONGO_ID" >> $GITHUB_OUTPUT
+          echo "✅ MongoDB ID: ${MONGO_ID:-unknown}"
+          echo "mongo_id=${MONGO_ID:-unknown}" >> $GITHUB_OUTPUT
         env:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
 

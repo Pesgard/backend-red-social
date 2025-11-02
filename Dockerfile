@@ -49,5 +49,5 @@
     EXPOSE 3000
     
     ENTRYPOINT ["dumb-init", "--"]
-    CMD ["pnpm", "start"]
+    CMD ["pnpm", "start:prod"]
     

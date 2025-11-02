@@ -3,7 +3,7 @@ name: 🚀 Deploy to Production (Dokploy)
 on:
   push:
     branches:
-      - main
+      - master
 
 env:
   IMAGE_NAME: backend_red_social_gera

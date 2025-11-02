@@ -8,19 +8,21 @@ on:
 env:
   IMAGE_NAME: backend_red_social_gera
   PROJECT_NAME: redsocialgera
+  ENVIRONMENT_NAME: production
   APP_NAME: redsocialgera-backend
   MONGO_APP_NAME: redsocialgera-mongodb
+  DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 🧩 1️⃣ Checkout
+      # 1️⃣ Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 🐳 2️⃣ Docker Setup
+      # 2️⃣ Docker Setup
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -33,7 +35,7 @@ jobs:
           username: ${{ secrets.DOCKHUB_USERNAME }}
           password: ${{ secrets.DOCKHUB_PASSWORD }}
 
-      # 🏗️ 3️⃣ Build and push image
+      # 3️⃣ Build and push image
       - name: Build and Push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -47,116 +49,110 @@ jobs:
           cache-from: type=registry,ref=${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
 
-      # 🔍 4️⃣ Check if Project exists
-      - name: Check if Project exists in Dokploy
-        id: check_project
-        run: |
-          response=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-            "${{ secrets.DOKPLOY_URL }}/api/trpc/project.all")
-          echo "response=$response"
-          echo "$response" | grep -q "\"name\":\"${{ env.PROJECT_NAME }}\"" && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
-
-      # 🏗️ 5️⃣ Create Project if not exists
+      # 4️⃣ Create Project (if not exists)
       - name: Create Project in Dokploy
-        if: steps.check_project.outputs.exists == 'false'
         id: create_project
         run: |
-          echo "🧩 Creating project ${{ env.PROJECT_NAME }} in Dokploy..."
-          response=$(curl -s -X POST \
-            -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            "${{ secrets.DOKPLOY_URL }}/api/trpc/project.create" \
-            -d '{"input":{"name":"'"${{ env.PROJECT_NAME }}"'"}}')
-          echo "response=$response"
-          PROJECT_ID=$(echo "$response" | grep -o '"id":"[^"]*' | cut -d'"' -f4)
-          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
-
-      - name: Get Project ID
-        if: steps.check_project.outputs.exists == 'true'
-        id: get_project
-        run: |
-          PROJECT_ID=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-            "${{ secrets.DOKPLOY_URL }}/api/trpc/project.all" | jq -r '.result.data | map(select(.name=="'${{ env.PROJECT_NAME }}'"))[0].id')
-          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
-
-      # 🧠 6️⃣ Combine project ID from both paths
-      - name: Determine Project ID
-        id: determine_project_id
-        run: |
-          if [ -n "${{ steps.create_project.outputs.project_id }}" ]; then
-            echo "project_id=${{ steps.create_project.outputs.project_id }}" >> $GITHUB_OUTPUT
-          else
-            echo "project_id=${{ steps.get_project.outputs.project_id }}" >> $GITHUB_OUTPUT
+          echo "🔍 Checking if project exists..."
+          PROJECT_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/project.all")
+          PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r ".result.data | map(select(.name==\"${{ env.PROJECT_NAME }}\"))[0].id")
+          
+          if [ "$PROJECT_ID" == "null" ] || [ -z "$PROJECT_ID" ]; then
+            echo "🧩 Creating project ${{ env.PROJECT_NAME }}..."
+            CREATE_RESPONSE=$(curl -s -X POST "$DOKPLOY_URL/project.create" \
+              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\": \"${{ env.PROJECT_NAME }}\", \"description\": \"Proyecto CI/CD automático\", \"env\": \"production\"}")
+            PROJECT_ID=$(echo "$CREATE_RESPONSE" | jq -r ".id")
           fi
 
-      # 🍃 7️⃣ Check if Mongo service exists
-      - name: Check if Mongo exists in Dokploy
-        id: check_mongo
-        run: |
-          response=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.all")
-          echo "response=$response"
-          echo "$response" | grep -q "\"name\":\"${{ env.MONGO_APP_NAME }}\"" && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
+          echo "✅ Project ID: $PROJECT_ID"
+          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
 
-      # 🍃 8️⃣ Create MongoDB service if not exists
+      # 5️⃣ Create Environment (if not exists)
+      - name: Create Environment in Dokploy
+        id: create_environment
+        run: |
+          PROJECT_ID=${{ steps.create_project.outputs.project_id }}
+          echo "🔍 Checking if environment exists..."
+          ENV_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/environment.byProjectId?projectId=$PROJECT_ID")
+          ENV_ID=$(echo "$ENV_RESPONSE" | jq -r ".result.data | map(select(.name==\"${{ env.ENVIRONMENT_NAME }}\"))[0].id")
+
+          if [ "$ENV_ID" == "null" ] || [ -z "$ENV_ID" ]; then
+            echo "🧩 Creating environment ${{ env.ENVIRONMENT_NAME }}..."
+            CREATE_ENV=$(curl -s -X POST "$DOKPLOY_URL/environment.create" \
+              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\": \"${{ env.ENVIRONMENT_NAME }}\", \"description\": \"Entorno de producción\", \"projectId\": \"$PROJECT_ID\"}")
+            ENV_ID=$(echo "$CREATE_ENV" | jq -r ".id")
+          fi
+
+          echo "✅ Environment ID: $ENV_ID"
+          echo "env_id=$ENV_ID" >> $GITHUB_OUTPUT
+
+      # 6️⃣ Create Mongo service (if not exists)
       - name: Create MongoDB in Dokploy
-        if: steps.check_mongo.outputs.exists == 'false'
+        id: create_mongo
         run: |
-          echo "🧩 Creating MongoDB service..."
-          response=$(curl -s -X POST \
-            -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.create" \
-            -d '{"input":{
-              "projectId":"'"${{ steps.determine_project_id.outputs.project_id }}"'",
-              "name":"'"${{ env.MONGO_APP_NAME }}"'",
-              "sourceType":"docker",
-              "dockerImage":"mongo:7.0-jammy",
-              "dockerExposePort":"27017",
-              "dockerEnv":{
-                "MONGO_INITDB_ROOT_USERNAME":"admin",
-                "MONGO_INITDB_ROOT_PASSWORD":"change_me_in_dokploy",
-                "MONGO_INITDB_DATABASE":"social_network_prod"
-              }
-            }}')
-          echo "response=$response"
+          ENV_ID=${{ steps.create_environment.outputs.env_id }}
+          echo "🔍 Checking if MongoDB exists..."
+          MONGO_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/mongo.one?appName=${{ env.MONGO_APP_NAME }}")
+          MONGO_ID=$(echo "$MONGO_RESPONSE" | jq -r ".id")
 
-      # 🧩 9️⃣ Check if backend exists
-      - name: Check if Backend exists
-        id: check_backend
-        run: |
-          response=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.all")
-          echo "response=$response"
-          echo "$response" | grep -q "\"name\":\"${{ env.APP_NAME }}\"" && echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
+          if [ "$MONGO_ID" == "null" ] || [ -z "$MONGO_ID" ]; then
+            echo "🧩 Creating MongoDB service..."
+            CREATE_MONGO=$(curl -s -X POST "$DOKPLOY_URL/mongo.create" \
+              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"name\": \"${{ env.MONGO_APP_NAME }}\",
+                \"appName\": \"${{ env.MONGO_APP_NAME }}\",
+                \"dockerImage\": \"mongo:7.0-jammy\",
+                \"environmentId\": \"$ENV_ID\",
+                \"databaseUser\": \"admin\",
+                \"databasePassword\": \"change_me_in_dokploy\",
+                \"description\": \"MongoDB for backend\"
+              }")
+            MONGO_ID=$(echo "$CREATE_MONGO" | jq -r ".id")
+          fi
 
-      # 🧩 🔟 Create Backend service if not exists
+          echo "✅ MongoDB ID: $MONGO_ID"
+          echo "mongo_id=$MONGO_ID" >> $GITHUB_OUTPUT
+
+      # 7️⃣ Create Backend application (if not exists)
       - name: Create Backend in Dokploy
-        if: steps.check_backend.outputs.exists == 'false'
+        id: create_backend
         run: |
-          echo "🧩 Creating backend service..."
-          response=$(curl -s -X POST \
-            -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.create" \
-            -d '{"input":{
-              "projectId":"'"${{ steps.determine_project_id.outputs.project_id }}"'",
-              "name":"'"${{ env.APP_NAME }}"'",
-              "sourceType":"docker",
-              "dockerImage":"'"${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"'",
-              "dockerExposePort":"3000"
-            }}')
-          echo "response=$response"
+          ENV_ID=${{ steps.create_environment.outputs.env_id }}
+          echo "🔍 Checking if backend exists..."
+          APP_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/application.one?appName=${{ env.APP_NAME }}")
+          APP_ID=$(echo "$APP_RESPONSE" | jq -r ".id")
 
-      # 🚀 1️⃣1️⃣ Trigger deployment for backend
+          if [ "$APP_ID" == "null" ] || [ -z "$APP_ID" ]; then
+            echo "🧩 Creating backend service..."
+            CREATE_APP=$(curl -s -X POST "$DOKPLOY_URL/application.create" \
+              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"name\": \"${{ env.APP_NAME }}\",
+                \"appName\": \"${{ env.APP_NAME }}\",
+                \"environmentId\": \"$ENV_ID\",
+                \"description\": \"Backend NestJS API\",
+                \"serverId\": null
+              }")
+            APP_ID=$(echo "$CREATE_APP" | jq -r ".id")
+          fi
+
+          echo "✅ Backend ID: $APP_ID"
+          echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
+
+      # 8️⃣ Deploy Backend
       - name: Trigger Dokploy Deployment
         run: |
-          echo "🚀 Deploying backend..."
-          response=$(curl -s -X POST \
+          APP_ID=${{ steps.create_backend.outputs.app_id }}
+          echo "🚀 Deploying backend in Dokploy..."
+          curl -s -X POST "$DOKPLOY_URL/application.deploy" \
             -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
             -H "Content-Type: application/json" \
-            "${{ secrets.DOKPLOY_URL }}/api/trpc/application.deploy" \
-            -d '{"input":{
-              "applicationName":"'"${{ env.APP_NAME }}"'"
-            }}')
-          echo "response=$response"
+            -d "{\"applicationId\": \"$APP_ID\", \"title\": \"Automatic Deploy\", \"description\": \"CI/CD auto deploy\"}"
+          echo "✅ Deployment triggered successfully"

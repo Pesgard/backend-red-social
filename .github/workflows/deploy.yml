@@ -122,7 +122,6 @@ jobs:
                 \"description\": \"MongoDB for backend\",
                 \"databaseUser\": \"admin\",
                 \"databasePassword\": \"change_me_in_dokploy\",
-                \"serverId\": null,
                 \"replicaSets\": false
               }")
             MONGO_ID=$(echo "$CREATE_MONGO" | jq -r ".mongoId")

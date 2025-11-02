@@ -25,4 +25,4 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ${{ secrets.DOCKHUB_USERNAME }}/backend_red_social_gera:latest
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64

@@ -133,10 +133,10 @@ jobs:
       - name: 🚀 Create Backend in Dokploy
         id: create_backend
         run: |
-          ENV_ID=${{ steps.setup_project.outputs.env_id }}
-          echo "🔍 Checking if backend exists in environment $ENV_ID ..."
-          
+          ENV_ID=${{ steps.setup_project.outputs.env_id }}          
           echo "🧩 Creating backend application..."
+          echo "Environment ID: $ENV_ID"
+          
           CREATE_APP=$(curl -s -X POST "$DOKPLOY_URL/application.create" \
             -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
             -H "Content-Type: application/json" \

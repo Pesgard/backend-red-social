@@ -55,7 +55,8 @@ jobs:
         run: |
           echo "🔍 Checking if project exists..."
           PROJECT_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/project.all")
-          PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r ".result.data | map(select(.name==\"${{ env.PROJECT_NAME }}\"))[0].id")
+          echo "Project response:"
+          PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r "map(select(.name==\"${{ env.PROJECT_NAME }}\"))[0].id")
           
           if [ "$PROJECT_ID" == "null" ] || [ -z "$PROJECT_ID" ]; then
             echo "🧩 Creating project ${{ env.PROJECT_NAME }}..."

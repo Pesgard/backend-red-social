@@ -96,37 +96,18 @@ jobs:
           echo "env_id=$ENV_ID" >> $GITHUB_OUTPUT
         env:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
-            
-
-      # 5️⃣ Create Environment (if not exists)
-      - name: Create Environment in Dokploy
-        id: create_environment
-        run: |
-          PROJECT_ID=${{ steps.create_project.outputs.project_id }}
-          echo "🔍 Checking if environment exists..."
-          ENV_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/environment.byProjectId?projectId=$PROJECT_ID")
-          ENV_ID=$(echo "$ENV_RESPONSE" | jq -r ".result.data | map(select(.name==\"${{ env.ENVIRONMENT_NAME }}\"))[0].id")
-
-          if [ "$ENV_ID" == "null" ] || [ -z "$ENV_ID" ]; then
-            echo "🧩 Creating environment ${{ env.ENVIRONMENT_NAME }}..."
-            CREATE_ENV=$(curl -s -X POST "$DOKPLOY_URL/environment.create" \
-              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-              -H "Content-Type: application/json" \
-              -d "{\"name\": \"${{ env.ENVIRONMENT_NAME }}\", \"description\": \"Entorno de producción\", \"projectId\": \"$PROJECT_ID\"}")
-            ENV_ID=$(echo "$CREATE_ENV" | jq -r ".id")
-          fi
-
-          echo "✅ Environment ID: $ENV_ID"
-          echo "env_id=$ENV_ID" >> $GITHUB_OUTPUT
 
       # 6️⃣ Create Mongo service (if not exists)
-      - name: Create MongoDB in Dokploy
+      - name: 🍃 Create MongoDB in Dokploy
         id: create_mongo
         run: |
-          ENV_ID=${{ steps.create_environment.outputs.env_id }}
-          echo "🔍 Checking if MongoDB exists..."
-          MONGO_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/mongo.one?appName=${{ env.MONGO_APP_NAME }}")
-          MONGO_ID=$(echo "$MONGO_RESPONSE" | jq -r ".id")
+          ENV_ID=${{ steps.setup_project.outputs.env_id }}
+          echo "🔍 Checking if MongoDB exists in environment $ENV_ID ..."
+
+          # Dokploy no tiene endpoint /mongo.one?appName=..., solo /mongo.one?id=...
+          # así que tenemos que traer todos y filtrar
+          MONGO_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/mongo.all")
+          MONGO_ID=$(echo "$MONGO_RESPONSE" | jq -r "map(select(.name==\"${{ env.MONGO_APP_NAME }}\"))[0].mongoId")
 
           if [ "$MONGO_ID" == "null" ] || [ -z "$MONGO_ID" ]; then
             echo "🧩 Creating MongoDB service..."
@@ -138,24 +119,33 @@ jobs:
                 \"appName\": \"${{ env.MONGO_APP_NAME }}\",
                 \"dockerImage\": \"mongo:7.0-jammy\",
                 \"environmentId\": \"$ENV_ID\",
+                \"description\": \"MongoDB for backend\",
                 \"databaseUser\": \"admin\",
                 \"databasePassword\": \"change_me_in_dokploy\",
-                \"description\": \"MongoDB for backend\"
+                \"serverId\": null,
+                \"replicaSets\": false
               }")
-            MONGO_ID=$(echo "$CREATE_MONGO" | jq -r ".id")
+            MONGO_ID=$(echo "$CREATE_MONGO" | jq -r ".mongoId")
+          else
+            echo "✅ MongoDB already exists."
           fi
 
           echo "✅ MongoDB ID: $MONGO_ID"
           echo "mongo_id=$MONGO_ID" >> $GITHUB_OUTPUT
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+
 
       # 7️⃣ Create Backend application (if not exists)
-      - name: Create Backend in Dokploy
+      - name: 🚀 Create Backend in Dokploy
         id: create_backend
         run: |
-          ENV_ID=${{ steps.create_environment.outputs.env_id }}
+          ENV_ID=${{ steps.setup_project.outputs.env_id }}
           echo "🔍 Checking if backend exists..."
-          APP_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/application.one?appName=${{ env.APP_NAME }}")
-          APP_ID=$(echo "$APP_RESPONSE" | jq -r ".id")
+
+          # Igual que antes, no existe /application.one?appName
+          APP_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/application.all")
+          APP_ID=$(echo "$APP_RESPONSE" | jq -r "map(select(.name==\"${{ env.APP_NAME }}\"))[0].applicationId")
 
           if [ "$APP_ID" == "null" ] || [ -z "$APP_ID" ]; then
             echo "🧩 Creating backend service..."
@@ -169,13 +159,17 @@ jobs:
                 \"description\": \"Backend NestJS API\",
                 \"serverId\": null
               }")
-            APP_ID=$(echo "$CREATE_APP" | jq -r ".id")
+            APP_ID=$(echo "$CREATE_APP" | jq -r ".applicationId")
+          else
+            echo "✅ Backend already exists."
           fi
 
           echo "✅ Backend ID: $APP_ID"
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
-
-      # 8️⃣ Deploy Backend
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+     
+          # 8️⃣ Deploy Backend
       - name: Trigger Dokploy Deployment
         run: |
           APP_ID=${{ steps.create_backend.outputs.app_id }}

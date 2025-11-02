@@ -134,14 +134,16 @@ jobs:
         id: create_backend
         run: |
           ENV_ID=${{ steps.setup_project.outputs.env_id }}
-          echo "🔍 Checking if backend exists..."
+          echo "🔍 Checking if backend exists in environment $ENV_ID ..."
 
-          # Igual que antes, no existe /application.one?appName
-          APP_RESPONSE=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/application.all")
-          APP_ID=$(echo "$APP_RESPONSE" | jq -r "map(select(.name==\"${{ env.APP_NAME }}\"))[0].applicationId")
+          ENV_DETAIL=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/environment.one?id=$ENV_ID")
+          echo "Environment response: $ENV_DETAIL"
 
-          if [ "$APP_ID" == "null" ] || [ -z "$APP_ID" ]; then
-            echo "🧩 Creating backend service..."
+          # Buscar la aplicación por nombre
+          APP_ID=$(echo "$ENV_DETAIL" | jq -r ".applications | map(select(.name==\"${{ env.APP_NAME }}\"))[0].applicationId // empty")
+
+          if [ -z "$APP_ID" ]; then
+            echo "🧩 Creating backend application..."
             CREATE_APP=$(curl -s -X POST "$DOKPLOY_URL/application.create" \
               -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
               -H "Content-Type: application/json" \
@@ -152,17 +154,23 @@ jobs:
                 \"description\": \"Backend NestJS API\",
                 \"serverId\": null
               }")
-            APP_ID=$(echo "$CREATE_APP" | jq -r ".applicationId")
+
+            echo "Application.create response: $CREATE_APP"
+
+            # A veces Dokploy responde con 'true' y no con objeto
+            if [ "$CREATE_APP" = "true" ]; then
+              echo "✅ Application created successfully (response true)."
+            else
+              APP_ID=$(echo "$CREATE_APP" | jq -r ".applicationId // empty")
+            fi
           else
-            echo "✅ Backend already exists."
+            echo "✅ Backend already exists with ID: $APP_ID"
           fi
 
-          echo "✅ Backend ID: $APP_ID"
-          echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
-        env:
-          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
-     
-          # 8️⃣ Deploy Backend
+          echo "✅ Backend ID: ${APP_ID:-unknown}"
+          echo "app_id=${APP_ID:-unknown}" >> $GITHUB_OUTPUT
+
+      # 8️⃣ Deploy Backend
       - name: Trigger Dokploy Deployment
         run: |
           APP_ID=${{ steps.create_backend.outputs.app_id }}

@@ -1,0 +1,28 @@
+# Dockerfile para desarrollo con hot reload
+FROM node:18-alpine
+
+# Instalar herramientas necesarias
+RUN apk add --no-cache dumb-init
+
+WORKDIR /app
+
+# Copiar archivos de dependencias
+COPY package*.json ./
+
+# Instalar todas las dependencias (incluidas dev)
+RUN npm install
+
+# Copiar archivos de configuración
+COPY tsconfig*.json ./
+COPY nest-cli.json ./
+
+# El código fuente se montará como volumen
+# para permitir hot reload
+
+EXPOSE 3000
+
+# Usar dumb-init
+ENTRYPOINT ["dumb-init", "--"]
+
+# Iniciar en modo desarrollo con watch
+CMD ["npm", "run", "start:dev"]

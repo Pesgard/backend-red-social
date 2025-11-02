@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "red-social-gera",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

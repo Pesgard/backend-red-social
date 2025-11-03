@@ -137,8 +137,8 @@ jobs:
           
           echo "Project Data: $PROJECT_DATA"
           
-          # Acceder directamente a .mongo[] sin .services
-          MONGO_ID=$(echo "$PROJECT_DATA" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .mongo[]? | select(.appName==\"${{ env.MONGO_APP_NAME }}\") | .mongoId // empty")
+          # Dokploy agrega sufijos aleatorios, buscar por nombre que contenga el prefijo
+          MONGO_ID=$(echo "$PROJECT_DATA" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .mongo[]? | select(.name==\"MongoDB Database\") | .mongoId" | head -n 1)
           
           if [ -z "$MONGO_ID" ]; then
             echo "🧩 Creating MongoDB service..."
@@ -165,10 +165,11 @@ jobs:
               # Esperar un momento para que se cree
               sleep 3
               
-              # Obtener el ID del MongoDB recién creado
+              # Obtener el ID del MongoDB recién creado (buscar por nombre)
               echo "🔍 Getting MongoDB ID..."
               PROJECT_DATA_UPDATED=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/project.one?projectId=$PROJECT_ID")
-              MONGO_ID=$(echo "$PROJECT_DATA_UPDATED" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .mongo[]? | select(.appName==\"${{ env.MONGO_APP_NAME }}\") | .mongoId // empty")
+              MONGO_ID=$(echo "$PROJECT_DATA_UPDATED" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .mongo[]? | select(.name==\"MongoDB Database\") | .mongoId" | head -n 1)
+              MONGO_APP_NAME_ACTUAL=$(echo "$PROJECT_DATA_UPDATED" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .mongo[]? | select(.mongoId==\"$MONGO_ID\") | .appName")
               
               if [ -z "$MONGO_ID" ]; then
                 echo "❌ Error: Could not retrieve MongoDB ID after creation"
@@ -176,6 +177,10 @@ jobs:
               fi
               
               echo "✅ MongoDB ID: $MONGO_ID"
+              echo "✅ MongoDB App Name: $MONGO_APP_NAME_ACTUAL"
+              
+              # Guardar el nombre real para usarlo en la URI de conexión
+              echo "mongo_app_name=$MONGO_APP_NAME_ACTUAL" >> $GITHUB_OUTPUT
               
               # Esperar un poco más antes de deployar
               sleep 2
@@ -194,6 +199,10 @@ jobs:
             fi
           else
             echo "✅ MongoDB already exists: $MONGO_ID"
+            # Obtener el appName real del MongoDB existente
+            MONGO_APP_NAME_ACTUAL=$(echo "$PROJECT_DATA" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .mongo[]? | select(.mongoId==\"$MONGO_ID\") | .appName")
+            echo "✅ MongoDB App Name: $MONGO_APP_NAME_ACTUAL"
+            echo "mongo_app_name=$MONGO_APP_NAME_ACTUAL" >> $GITHUB_OUTPUT
           fi
           
           echo "mongo_id=$MONGO_ID" >> $GITHUB_OUTPUT
@@ -204,14 +213,15 @@ jobs:
         run: |
           ENV_ID=${{ steps.setup_project.outputs.env_id }}
           PROJECT_ID=${{ steps.setup_project.outputs.project_id }}
+          MONGO_APP_NAME_ACTUAL=${{ steps.setup_mongo.outputs.mongo_app_name }}
           
           echo "🔍 Checking if Backend exists..."
           PROJECT_DATA=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/project.one?projectId=$PROJECT_ID")
           
           echo "Project Data: $PROJECT_DATA"
           
-          # Acceder directamente a .applications[] sin .services
-          APP_ID=$(echo "$PROJECT_DATA" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .applications[]? | select(.appName==\"${{ env.APP_NAME }}\") | .applicationId // empty")
+          # Buscar por nombre de la aplicación (Backend API)
+          APP_ID=$(echo "$PROJECT_DATA" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .applications[]? | select(.name==\"Backend API\") | .applicationId" | head -n 1)
           
           if [ -z "$APP_ID" ]; then
             echo "🧩 Creating Backend application..."
@@ -237,7 +247,7 @@ jobs:
               # Obtener el ID de la aplicación recién creada
               echo "🔍 Getting Backend Application ID..."
               PROJECT_DATA_UPDATED=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/project.one?projectId=$PROJECT_ID")
-              APP_ID=$(echo "$PROJECT_DATA_UPDATED" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .applications[]? | select(.appName==\"${{ env.APP_NAME }}\") | .applicationId // empty")
+              APP_ID=$(echo "$PROJECT_DATA_UPDATED" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .applications[]? | select(.name==\"Backend API\") | .applicationId" | head -n 1)
               
               if [ -z "$APP_ID" ]; then
                 echo "❌ Error: Could not retrieve Application ID after creation"
@@ -260,9 +270,9 @@ jobs:
               
               echo "Docker Config Response: $DOCKER_CONFIG"
               
-              # Configurar variables de entorno específicas del backend
+              # Configurar variables de entorno específicas del backend usando el appName real
               echo "🔧 Configuring backend environment..."
-              BACKEND_ENV="MONGODB_URI=mongodb://${{ env.MONGO_APP_NAME }}:27017/social_network_prod"
+              BACKEND_ENV="MONGODB_URI=mongodb://${MONGO_APP_NAME_ACTUAL}:27017/social_network_prod"
               
               ENV_CONFIG=$(curl -s -X POST "$DOKPLOY_URL/application.saveEnvironment" \
                 -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
@@ -309,6 +319,20 @@ jobs:
               }")
             
             echo "Docker Update Response: $DOCKER_UPDATE"
+            
+            # Actualizar MONGODB_URI con el nombre real
+            echo "🔧 Updating backend environment with real MongoDB URI..."
+            BACKEND_ENV="MONGODB_URI=mongodb://${MONGO_APP_NAME_ACTUAL}:27017/social_network_prod"
+            
+            ENV_UPDATE=$(curl -s -X POST "$DOKPLOY_URL/application.saveEnvironment" \
+              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"applicationId\": \"$APP_ID\",
+                \"env\": $(echo "$BACKEND_ENV" | jq -Rs .)
+              }")
+            
+            echo "Environment Update Response: $ENV_UPDATE"
           fi
           
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT

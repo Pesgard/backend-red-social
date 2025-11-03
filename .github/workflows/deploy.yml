@@ -158,26 +158,40 @@ jobs:
             
             echo "Create Mongo Response: $CREATE_MONGO"
             
-            MONGO_ID=$(echo "$CREATE_MONGO" | jq -r ".mongoId // empty")
-            
-            if [ -z "$MONGO_ID" ]; then
+            # La API devuelve solo 'true', necesitamos obtener el ID consultando de nuevo
+            if [ "$CREATE_MONGO" = "true" ]; then
+              echo "✅ MongoDB created successfully"
+              
+              # Esperar un momento para que se cree
+              sleep 3
+              
+              # Obtener el ID del MongoDB recién creado
+              echo "🔍 Getting MongoDB ID..."
+              PROJECT_DATA_UPDATED=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/project.one?projectId=$PROJECT_ID")
+              MONGO_ID=$(echo "$PROJECT_DATA_UPDATED" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .mongo[]? | select(.appName==\"${{ env.MONGO_APP_NAME }}\") | .mongoId // empty")
+              
+              if [ -z "$MONGO_ID" ]; then
+                echo "❌ Error: Could not retrieve MongoDB ID after creation"
+                exit 1
+              fi
+              
+              echo "✅ MongoDB ID: $MONGO_ID"
+              
+              # Esperar un poco más antes de deployar
+              sleep 2
+              
+              # Deploy MongoDB
+              echo "🚀 Deploying MongoDB..."
+              DEPLOY_MONGO=$(curl -s -X POST "$DOKPLOY_URL/mongo.deploy" \
+                -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+                -H "Content-Type: application/json" \
+                -d "{\"mongoId\": \"$MONGO_ID\"}")
+              
+              echo "Deploy Mongo Response: $DEPLOY_MONGO"
+            else
               echo "❌ Error creating MongoDB. Response: $CREATE_MONGO"
               exit 1
             fi
-            
-            echo "✅ MongoDB created: $MONGO_ID"
-            
-            # Esperar un momento para que se cree
-            sleep 5
-            
-            # Deploy MongoDB
-            echo "🚀 Deploying MongoDB..."
-            DEPLOY_MONGO=$(curl -s -X POST "$DOKPLOY_URL/mongo.deploy" \
-              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-              -H "Content-Type: application/json" \
-              -d "{\"mongoId\": \"$MONGO_ID\"}")
-            
-            echo "Deploy Mongo Response: $DEPLOY_MONGO"
           else
             echo "✅ MongoDB already exists: $MONGO_ID"
           fi
@@ -213,58 +227,72 @@ jobs:
             
             echo "Create App Response: $CREATE_APP"
             
-            APP_ID=$(echo "$CREATE_APP" | jq -r ".applicationId // empty")
-            
-            if [ -z "$APP_ID" ]; then
+            # La API devuelve solo 'true', necesitamos obtener el ID consultando de nuevo
+            if [ "$CREATE_APP" = "true" ]; then
+              echo "✅ Backend created successfully"
+              
+              # Esperar un momento para que se cree
+              sleep 3
+              
+              # Obtener el ID de la aplicación recién creada
+              echo "🔍 Getting Backend Application ID..."
+              PROJECT_DATA_UPDATED=$(curl -s -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" "$DOKPLOY_URL/project.one?projectId=$PROJECT_ID")
+              APP_ID=$(echo "$PROJECT_DATA_UPDATED" | jq -r ".environments[] | select(.environmentId==\"$ENV_ID\") | .applications[]? | select(.appName==\"${{ env.APP_NAME }}\") | .applicationId // empty")
+              
+              if [ -z "$APP_ID" ]; then
+                echo "❌ Error: Could not retrieve Application ID after creation"
+                exit 1
+              fi
+              
+              echo "✅ Backend Application ID: $APP_ID"
+              
+              # Configurar Docker provider
+              echo "🐳 Configuring Docker provider..."
+              DOCKER_CONFIG=$(curl -s -X POST "$DOKPLOY_URL/application.saveDockerProvider" \
+                -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"applicationId\": \"$APP_ID\",
+                  \"dockerImage\": \"${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest\",
+                  \"username\": \"${{ secrets.DOCKHUB_USERNAME }}\",
+                  \"password\": \"${{ secrets.DOCKHUB_PASSWORD }}\"
+                }")
+              
+              echo "Docker Config Response: $DOCKER_CONFIG"
+              
+              # Configurar variables de entorno específicas del backend
+              echo "🔧 Configuring backend environment..."
+              BACKEND_ENV="MONGODB_URI=mongodb://${{ env.MONGO_APP_NAME }}:27017/social_network_prod"
+              
+              ENV_CONFIG=$(curl -s -X POST "$DOKPLOY_URL/application.saveEnvironment" \
+                -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"applicationId\": \"$APP_ID\",
+                  \"env\": $(echo "$BACKEND_ENV" | jq -Rs .)
+                }")
+              
+              echo "Environment Config Response: $ENV_CONFIG"
+              
+              # Actualizar configuración de la aplicación
+              echo "⚙️ Updating application settings..."
+              APP_UPDATE=$(curl -s -X POST "$DOKPLOY_URL/application.update" \
+                -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"applicationId\": \"$APP_ID\",
+                  \"sourceType\": \"docker\",
+                  \"memoryLimit\": 512,
+                  \"memoryReservation\": 256,
+                  \"cpuLimit\": 1,
+                  \"cpuReservation\": 0.5
+                }")
+              
+              echo "App Update Response: $APP_UPDATE"
+            else
               echo "❌ Error creating Backend. Response: $CREATE_APP"
               exit 1
             fi
-            
-            echo "✅ Backend created: $APP_ID"
-            
-            # Configurar Docker provider
-            echo "🐳 Configuring Docker provider..."
-            DOCKER_CONFIG=$(curl -s -X POST "$DOKPLOY_URL/application.saveDockerProvider" \
-              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-              -H "Content-Type: application/json" \
-              -d "{
-                \"applicationId\": \"$APP_ID\",
-                \"dockerImage\": \"${{ secrets.DOCKHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest\",
-                \"username\": \"${{ secrets.DOCKHUB_USERNAME }}\",
-                \"password\": \"${{ secrets.DOCKHUB_PASSWORD }}\"
-              }")
-            
-            echo "Docker Config Response: $DOCKER_CONFIG"
-            
-            # Configurar variables de entorno específicas del backend
-            echo "🔧 Configuring backend environment..."
-            BACKEND_ENV="MONGODB_URI=mongodb://${{ env.MONGO_APP_NAME }}:27017/social_network_prod"
-            
-            ENV_CONFIG=$(curl -s -X POST "$DOKPLOY_URL/application.saveEnvironment" \
-              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-              -H "Content-Type: application/json" \
-              -d "{
-                \"applicationId\": \"$APP_ID\",
-                \"env\": $(echo "$BACKEND_ENV" | jq -Rs .)
-              }")
-            
-            echo "Environment Config Response: $ENV_CONFIG"
-            
-            # Actualizar configuración de la aplicación
-            echo "⚙️ Updating application settings..."
-            APP_UPDATE=$(curl -s -X POST "$DOKPLOY_URL/application.update" \
-              -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
-              -H "Content-Type: application/json" \
-              -d "{
-                \"applicationId\": \"$APP_ID\",
-                \"sourceType\": \"docker\",
-                \"memoryLimit\": 512,
-                \"memoryReservation\": 256,
-                \"cpuLimit\": 1,
-                \"cpuReservation\": 0.5
-              }")
-            
-            echo "App Update Response: $APP_UPDATE"
           else
             echo "✅ Backend already exists: $APP_ID"
             

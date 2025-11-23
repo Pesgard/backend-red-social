@@ -1,9 +1,9 @@
-import { 
-  ConflictException, 
-  HttpStatus, 
-  Injectable, 
+import {
+  ConflictException,
+  HttpStatus,
+  Injectable,
   NotFoundException,
-  UnauthorizedException 
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -90,11 +90,15 @@ export class UsersService {
     );
 
     if (isSamePassword) {
-      throw new ConflictException('La nueva contraseña debe ser diferente a la actual');
+      throw new ConflictException(
+        'La nueva contraseña debe ser diferente a la actual',
+      );
     }
 
     // Hash de la nueva contraseña
-    const hashedPassword = await this.hashUtils.hash(changePasswordDto.new_password);
+    const hashedPassword = await this.hashUtils.hash(
+      changePasswordDto.new_password,
+    );
     user.password = hashedPassword;
     await user.save();
 

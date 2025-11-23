@@ -13,23 +13,18 @@ import { HashUtils } from 'src/common/utils/hashUtils';
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
-      imports: [
-        ConfigModule,
-      ],
+      imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: "7d", // 7 dias
+          expiresIn: '7d', // 7 dias
         },
       }),
     }),
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
   controllers: [AuthController],
-  providers: [AuthService,
-    JwtStrategy,
-    HashUtils
-  ],
+  providers: [AuthService, JwtStrategy, HashUtils],
 })
-export class AuthModule { }
+export class AuthModule {}

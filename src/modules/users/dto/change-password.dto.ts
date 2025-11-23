@@ -6,10 +6,12 @@ export class ChangePasswordDto {
   current_password: string;
 
   @IsString()
-  @MinLength(10, { message: 'La nueva contraseña debe tener al menos 10 caracteres' })
-  @Matches(
-    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-    { message: 'La nueva contraseña debe incluir al menos una mayúscula, una minúscula y un número' }
-  )
+  @MinLength(10, {
+    message: 'La nueva contraseña debe tener al menos 10 caracteres',
+  })
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, {
+    message:
+      'La nueva contraseña debe incluir al menos una mayúscula, una minúscula y un número',
+  })
   new_password: string;
 }

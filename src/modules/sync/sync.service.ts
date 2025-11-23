@@ -1,26 +1,40 @@
 import { Injectable } from '@nestjs/common';
-import { CreateSyncDto } from './dto/create-sync.dto';
-import { UpdateSyncDto } from './dto/update-sync.dto';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { SyncPostsDto } from './dto/sync-posts.dto';
+import { Post, PostDocument } from '../posts/schemas/post.schema';
 
 @Injectable()
 export class SyncService {
-  create(createSyncDto: CreateSyncDto) {
-    return 'This action adds a new sync';
-  }
+  constructor(@InjectModel(Post.name) private postModel: Model<PostDocument>) {}
 
-  findAll() {
-    return `This action returns all sync`;
-  }
+  async syncPosts(userId: string, syncPostsDto: SyncPostsDto) {
+    const synced: Array<{ local_id: string; server_id: string }> = [];
 
-  findOne(id: number) {
-    return `This action returns a #${id} sync`;
-  }
+    for (const pendingPost of syncPostsDto.pending_posts) {
+      try {
+        // Create the post
+        const newPost = new this.postModel({
+          title: pendingPost.title,
+          description: pendingPost.description,
+          images: pendingPost.images || [],
+          author: userId,
+        });
 
-  update(id: number, updateSyncDto: UpdateSyncDto) {
-    return `This action updates a #${id} sync`;
-  }
+        const savedPost = await newPost.save();
 
-  remove(id: number) {
-    return `This action removes a #${id} sync`;
+        synced.push({
+          local_id: pendingPost.local_id,
+          server_id: (savedPost as any)._id.toString(),
+        });
+      } catch (error) {
+        // Log error but continue with other posts
+        console.error(`Error syncing post ${pendingPost.local_id}:`, error);
+      }
+    }
+
+    return {
+      synced,
+    };
   }
 }

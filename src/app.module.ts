@@ -14,31 +14,37 @@ import { HealthController } from './modules/health/health.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 
 @Module({
-  imports: [ConfigModule.forRoot({
-    isGlobal: true,
-    envFilePath: `.env`,
-  }),
-
-  // Conexión a MongoDB
-  MongooseModule.forRootAsync({
-    imports: [ConfigModule],
-    inject: [ConfigService],
-    useFactory: (configService: ConfigService) => ({
-      uri: configService.get<string>('MONGODB_URI'),
-      retryAttempts: 3,
-      retryDelay: 1000,
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: `.env`,
     }),
-  }),
 
+    // Conexión a MongoDB
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        uri: configService.get<string>('MONGODB_URI'),
+        retryAttempts: 3,
+        retryDelay: 1000,
+      }),
+    }),
 
-    SyncModule, AuthModule, PostsModule, CommentsModule, FavoritesModule, UsersModule
+    SyncModule,
+    AuthModule,
+    PostsModule,
+    CommentsModule,
+    FavoritesModule,
+    UsersModule,
   ],
   controllers: [AppController, HealthController],
-  providers: [AppService, {
-    provide: APP_GUARD,
-    useClass: JwtAuthGuard,
-  }
-    
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
   ],
 })
-export class AppModule { }
+export class AppModule {}

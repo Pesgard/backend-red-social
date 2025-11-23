@@ -1,0 +1,16 @@
+meta {
+  name: food-central-api
+  type: http
+  seq: 5
+}
+
+get {
+  url: http://127.0.0.1:8000/recommend_food/alumno_123
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

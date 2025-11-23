@@ -8,6 +8,7 @@ import { PostsModule } from './modules/posts/posts.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { UsersModule } from './modules/users/users.module';
+import { SeedModule } from './modules/seed/seed.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { APP_GUARD } from '@nestjs/core';
 import { HealthController } from './modules/health/health.controller';
@@ -37,6 +38,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     CommentsModule,
     FavoritesModule,
     UsersModule,
+    SeedModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

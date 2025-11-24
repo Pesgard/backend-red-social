@@ -59,10 +59,7 @@ export class PostsController {
 
   @Get(':id')
   @HttpCode(HttpStatus.OK)
-  findOne(
-    @Param('id') id: string,
-    @CurrentUser('id') userId: string,
-  ) {
+  findOne(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.postsService.findOne(id, userId);
   }
 

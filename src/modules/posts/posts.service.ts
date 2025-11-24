@@ -341,4 +341,69 @@ export class PostsService {
       dislikes: post.dislikes,
     };
   }
+
+  /**
+   * Obtiene todos los posts de un usuario específico
+   * @param userId ID del usuario cuyos posts se quieren obtener
+   * @param currentUserId ID del usuario actual (para determinar interacciones)
+   */
+  async findByUserId(userId: string, currentUserId: string) {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('ID de usuario inválido');
+    }
+
+    const posts = await this.postModel
+      .find({ author: userId })
+      .populate('author', 'alias avatar_url')
+      .sort({ created_at: -1 })
+      .exec();
+
+    const userObjectId = new Types.ObjectId(currentUserId);
+
+    // Obtener favoritos del usuario actual
+    const favorites = await this.favoriteModel
+      .find({ user: userObjectId })
+      .exec();
+    const favoritePostIds = new Set(
+      favorites.map((f) => f.post.toString()),
+    );
+
+    return posts.map((post: any) => {
+      const postId = post._id.toString();
+      const hasLiked = post.votes.some(
+        (v) => v.user.toString() === currentUserId && v.vote === 'like',
+      );
+      const hasDisliked = post.votes.some(
+        (v) => v.user.toString() === currentUserId && v.vote === 'dislike',
+      );
+      const isFavorite = favoritePostIds.has(postId);
+      const canEdit = post.author.toString() === currentUserId;
+      const canDelete = post.author.toString() === currentUserId;
+
+      const postAuthor = post.author as any;
+
+      return {
+        id: postId,
+        title: post.title,
+        description: post.description,
+        author: {
+          id: postAuthor._id.toString(),
+          alias: postAuthor.alias,
+          avatar_url: postAuthor.avatar_url,
+        },
+        images: post.images,
+        likes: post.likes,
+        dislikes: post.dislikes,
+        created_at: post.created_at,
+        updated_at: post.updated_at,
+        user_interaction: {
+          has_liked: hasLiked,
+          has_disliked: hasDisliked,
+          is_favorite: isFavorite,
+          can_edit: canEdit,
+          can_delete: canDelete,
+        },
+      };
+    });
+  }
 }

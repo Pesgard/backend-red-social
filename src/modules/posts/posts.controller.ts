@@ -43,6 +43,20 @@ export class PostsController {
     return this.postsService.findAll({ search, author, order_by, direction });
   }
 
+  /**
+   * Obtener posts de un usuario específico
+   * GET /posts/user/:userId
+   * Debe ir antes de @Get(':id') para evitar conflictos de rutas
+   */
+  @Get('user/:userId')
+  @HttpCode(HttpStatus.OK)
+  getUserPosts(
+    @Param('userId') userId: string,
+    @CurrentUser('id') currentUserId: string,
+  ) {
+    return this.postsService.findByUserId(userId, currentUserId);
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   findOne(

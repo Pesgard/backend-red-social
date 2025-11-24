@@ -11,6 +11,7 @@ import { UpdatePostDto } from './dto/update-post.dto';
 import { VotePostDto } from './dto/vote-post.dto';
 import { Post, PostDocument } from './schemas/post.schema';
 import { Comment, CommentDocument } from '../comments/schemas/comment.schema';
+import { Favorite, FavoriteDocument } from '../favorites/schemas/favorite.schema';
 
 interface QueryParams {
   search?: string;
@@ -24,6 +25,7 @@ export class PostsService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
+    @InjectModel(Favorite.name) private favoriteModel: Model<FavoriteDocument>,
   ) {}
 
   async create(userId: string, createPostDto: CreatePostDto) {
@@ -95,7 +97,7 @@ export class PostsService {
     }));
   }
 
-  async findOne(postId: string) {
+  async findOne(postId: string, userId: string) {
     if (!Types.ObjectId.isValid(postId)) {
       throw new BadRequestException('ID de publicación inválido');
     }
@@ -109,6 +111,21 @@ export class PostsService {
       throw new NotFoundException('Publicación no encontrada');
     }
 
+    // Check user interactions with the post
+    const userObjectId = new Types.ObjectId(userId);
+    const hasLiked = post.votes.some(
+      (v) => v.user.toString() === userId && v.vote === 'like',
+    );
+    const hasDisliked = post.votes.some(
+      (v) => v.user.toString() === userId && v.vote === 'dislike',
+    );
+    const isFavorite = !!(await this.favoriteModel.findOne({
+      user: userObjectId,
+      post: postId,
+    }));
+    const canEdit = post.author.toString() === userId;
+    const canDelete = post.author.toString() === userId;
+
     // Get all comments for this post
     const comments = await this.commentModel
       .find({ post: postId, parent: null })
@@ -116,38 +133,74 @@ export class PostsService {
       .sort({ created_at: -1 })
       .exec();
 
-    // Get replies for each comment
+    // Get replies for each comment with full information
     const commentsWithReplies = await Promise.all(
       comments.map(async (comment: any) => {
         const replies = await this.commentModel
           .find({ parent: comment._id })
-          .populate('user', 'alias')
+          .populate('user', 'alias avatar_url')
           .sort({ created_at: 1 })
           .exec();
+
+        // Check if user liked this comment
+        const userHasLikedComment = comment.likes.some(
+          (like: any) => like.toString() === userId,
+        );
+        const canEditComment = comment.user._id.toString() === userId;
+        const canDeleteComment = comment.user._id.toString() === userId;
 
         return {
           id: comment._id.toString(),
           user: {
             id: comment.user._id.toString(),
             alias: comment.user.alias,
+            avatar_url: comment.user.avatar_url,
           },
           text: comment.text,
           likes: comment.likes_count,
           created_at: comment.created_at,
-          replies: replies.map((reply: any) => ({
-            id: reply._id.toString(),
-            user: {
-              id: reply.user._id.toString(),
-              alias: reply.user.alias,
-            },
-            text: reply.text,
-            created_at: reply.created_at,
-          })),
+          updated_at: comment.updated_at,
+          user_interaction: {
+            has_liked: userHasLikedComment,
+            can_edit: canEditComment,
+            can_delete: canDeleteComment,
+          },
+          replies: replies.map((reply: any) => {
+            const userHasLikedReply = reply.likes.some(
+              (like: any) => like.toString() === userId,
+            );
+            const canEditReply = reply.user._id.toString() === userId;
+            const canDeleteReply = reply.user._id.toString() === userId;
+
+            return {
+              id: reply._id.toString(),
+              user: {
+                id: reply.user._id.toString(),
+                alias: reply.user.alias,
+                avatar_url: reply.user.avatar_url,
+              },
+              text: reply.text,
+              likes: reply.likes_count,
+              created_at: reply.created_at,
+              updated_at: reply.updated_at,
+              user_interaction: {
+                has_liked: userHasLikedReply,
+                can_edit: canEditReply,
+                can_delete: canDeleteReply,
+              },
+            };
+          }),
         };
       }),
     );
 
     const postAuthor = post.author as any;
+
+    // Calculate metadata
+    const totalComments = commentsWithReplies.reduce(
+      (acc, c) => acc + 1 + (c.replies?.length || 0),
+      0,
+    );
 
     return {
       id: (post as any)._id.toString(),
@@ -163,6 +216,19 @@ export class PostsService {
       dislikes: post.dislikes,
       created_at: post.created_at,
       updated_at: post.updated_at,
+      user_interaction: {
+        has_liked: hasLiked,
+        has_disliked: hasDisliked,
+        is_favorite: isFavorite,
+        can_edit: canEdit,
+        can_delete: canDelete,
+      },
+      metadata: {
+        comments_count: commentsWithReplies.length,
+        total_comments: totalComments,
+        has_images: post.images.length > 0,
+        image_count: post.images.length,
+      },
       comments: commentsWithReplies,
     };
   }
